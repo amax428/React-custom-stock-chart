@@ -19,8 +19,8 @@ function parseData(parse) {
 const parseDate = timeParse("%Y-%m-%d");
 
 export function getData() {
-	//const promiseMSFT = fetch("https://cdn.rawgit.com/rrag/react-stockcharts/master/docs/data/MSFT.tsv")
-	const promiseMSFT = fetch("https://www.buysellorhold.com/api/history/tsv?symbol=GAB")
+	const promiseMSFT = fetch("https://cdn.rawgit.com/rrag/react-stockcharts/master/docs/data/MSFT.tsv")
+	//const promiseMSFT = fetch("https://www.buysellorhold.com/api/history/tsv?symbol=GAB")
 		.then(response => response.text())
 		.then(data => tsvParse(data, parseData(parseDate)))
 	return promiseMSFT;

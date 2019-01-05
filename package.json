@@ -5,6 +5,7 @@
   "dependencies": {
     "d3-dsv": "^1.0.10",
     "react": "^16.7.0",
+    "react-bootstrap": "^0.32.4",
     "react-dom": "^16.7.0",
     "react-scripts": "2.1.2",
     "react-stockcharts": "^0.7.8"
