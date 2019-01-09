@@ -155,65 +155,30 @@ class Dialog extends React.Component {
 
 const alert = InteractiveYCoordinate.defaultProps.defaultPriceCoordinate;
 
-class AlertDialog extends React.Component {
-	constructor(props) {
-		super(props);
-		this.state = {
-			alert: props.alert,
-		};
-		this.handleChange = this.handleChange.bind(this);
-		this.handleSave = this.handleSave.bind(this);
-	}
-	componentWillReceiveProps(nextProps) {
-		this.setState({
-			alert: nextProps.alert,
-		});
-	}
-	handleChange(e) {
-		const { alert } = this.state;
-		this.setState({
-			alert: {
-				...alert,
-				yValue: Number(e.target.value),
-			}
-		});
-	}
-	handleSave() {
-		this.props.onSave(this.state.alert, this.props.chartId);
-	}
-	render() {
-		const {
-			showModal,
-			onClose,
-			onDeleteAlert,
-		} = this.props;
-		const { alert } = this.state;
-
-		if (!showModal) return null;
-		return (
-			<Modal show={showModal} onHide={onClose} >
-				<Modal.Header closeButton>
-					<Modal.Title>Edit Alert</Modal.Title>
-				</Modal.Header>
-
-				<Modal.Body>
-					<form>
-						<FormGroup controlId="text">
-							<ControlLabel>Alert when crossing</ControlLabel>
-							<FormControl type="number" value={alert.yValue} onChange={this.handleChange} />
-						</FormGroup>
-					</form>
-				</Modal.Body>
-
-				<Modal.Footer>
-					<Button bsStyle="danger" onClick={onDeleteAlert}>Delete Alert</Button>
-					<Button bsStyle="primary" onClick={this.handleSave}>Save</Button>
-				</Modal.Footer>
-			</Modal>
-		);
+const markStyles = {
+	blue: {
+		...InteractiveYCoordinate.defaultProps.defaultPriceCoordinate,
+		id: shortid.generate(),
+		draggable: false,
+		stroke: 'blue',
+		textFill: 'blue',
+		edge: {
+			...InteractiveYCoordinate.defaultProps.defaultPriceCoordinate.edge,
+			stroke: 'blue',
+		},
+	},
+	red: {
+		...InteractiveYCoordinate.defaultProps.defaultPriceCoordinate,
+		id: shortid.generate(),
+		draggable: false,
+		stroke: 'red',
+		textFill: 'red',
+		edge: {
+			...InteractiveYCoordinate.defaultProps.defaultPriceCoordinate.edge,
+			stroke: 'red',
+		}
 	}
 }
-
 class CandleStickChartWithMA extends React.Component {
 	constructor(props) {
 		super(props);
@@ -247,28 +212,24 @@ class CandleStickChartWithMA extends React.Component {
 			showYModal: false,
 			yCoordinateList_1: [
 				{
-					...InteractiveYCoordinate.defaultProps.defaultPriceCoordinate,
+					...markStyles.blue,
 					yValue: this.props.marks.R1,
-					id: shortid.generate(),
-					draggable: true,
+					text: 'R1',
 				},
 				{
-					...InteractiveYCoordinate.defaultProps.defaultPriceCoordinate,
+					...markStyles.blue,
 					yValue: this.props.marks.R2,
-					id: shortid.generate(),
-					draggable: true,
+					text: 'R2',
 				},
 				{
-					...InteractiveYCoordinate.defaultProps.defaultPriceCoordinate,
+					...markStyles.red,
 					yValue: this.props.marks.S1,
-					id: shortid.generate(),
-					draggable: true,
+					text: 'S1',
 				},
 				{
-					...InteractiveYCoordinate.defaultProps.defaultPriceCoordinate,
+					...markStyles.red,
 					yValue: this.props.marks.S2,
-					id: shortid.generate(),
-					draggable: true,
+					text: 'S2',
 				},
 			],
 			yCoordinateList_3: [],
@@ -687,14 +648,6 @@ class CandleStickChartWithMA extends React.Component {
 					chartId={this.state.chartId}
 					onClose={this.handleDialogClose}
 					onSave={this.handleTextChange}
-				/>
-				<AlertDialog
-					showModal={showYModal}
-					alert={alertToEdit.alert}
-					chartId={alertToEdit.chartId}
-					onClose={this.handleDialogClose}
-					onSave={this.handleChangeAlert}
-					onDeleteAlert={this.handleDeleteAlert}
 				/>
 		</div>
 		);
