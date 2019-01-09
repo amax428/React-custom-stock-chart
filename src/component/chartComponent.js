@@ -18,6 +18,7 @@ export default class ChartComponent extends React.Component {
 	componentDidMount() {
 		getData().then(data => {
 			this.setState({ data });
+			console.log(data)
 		});
 		getMarks().then(marks => {
 			this.setState({marks: marks.data});

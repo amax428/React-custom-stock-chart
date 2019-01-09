@@ -3,7 +3,7 @@ import React from 'react';
 import PropTypes from 'prop-types';
 
 import { format } from 'd3-format';
-import { timeFormat } from 'd3-time-format';
+import { timeFormat, timeParse } from 'd3-time-format';
 import shortid from 'shortid';
 import { ChartCanvas, Chart } from 'react-stockcharts';
 
@@ -18,7 +18,6 @@ import {
 import {
 	BarSeries,
 	AreaSeries,
-	CandlestickSeries,
 	OHLCSeries,
 	LineSeries,
 } from 'react-stockcharts/lib/series';
@@ -43,12 +42,8 @@ import { head, last, toObject } from 'react-stockcharts/lib/utils';
 import { InteractiveText, DrawingObjectSelector, InteractiveYCoordinate } from "react-stockcharts/lib/interactive";
 import { getMorePropsForChart } from "react-stockcharts/lib/interactive/utils";
 import { saveInteractiveNodes, getInteractiveNodes } from '../utils/interactiveutils';
+import { LabelAnnotation, Annotate } from "react-stockcharts/lib/annotation";
 import { Colors } from '../styles/variables';
-
-function round(number, precision = 0) {
-	const d = Math.pow(10, precision);
-	return Math.round(number * d) / d;
-}
 
 var defaultTextStyles = {
 	...InteractiveText.defaultProps.defaultText,
@@ -66,6 +61,7 @@ var hoverTextStyles = {
 
 const dateFormat = timeFormat("%Y-%m-%d");
 const numberFormat = format(".2f");
+const parseDate = timeParse("%m/%d/%Y");
 
 function tooltipContent(ys) {
 	return ({ currentItem, xAccessor }) => {
@@ -101,60 +97,6 @@ function tooltipContent(ys) {
 	};
 }
 
-class Dialog extends React.Component {
-	constructor(props) {
-		super(props);
-		this.state = {
-			text: props.text,
-		};
-		this.handleChange = this.handleChange.bind(this);
-		this.handleSave = this.handleSave.bind(this);
-	}
-	componentWillReceiveProps(nextProps) {
-		this.setState({
-			text: nextProps.text,
-		});
-	}
-	handleChange(e) {
-		this.setState({
-			text: e.target.value
-		});
-	}
-	handleSave() {
-		this.props.onSave(this.state.text, this.props.chartId);
-	}
-	render() {
-		const {
-			showModal,
-			onClose,
-		} = this.props;
-		const { text } = this.state;
-
-		return (
-			<Modal show={showModal} onHide={onClose} >
-				<Modal.Header closeButton>
-					<Modal.Title>Edit text</Modal.Title>
-				</Modal.Header>
-
-				<Modal.Body>
-					<form>
-						<FormGroup controlId="text">
-							<ControlLabel>Text</ControlLabel>
-							<FormControl type="text" value={text} onChange={this.handleChange} />
-						</FormGroup>
-					</form>
-				</Modal.Body>
-
-				<Modal.Footer>
-					<Button bsStyle="primary" onClick={this.handleSave}>Save</Button>
-				</Modal.Footer>
-			</Modal>
-		);
-	}
-}
-
-const alert = InteractiveYCoordinate.defaultProps.defaultPriceCoordinate;
-
 const markStyles = {
 	blue: {
 		...InteractiveYCoordinate.defaultProps.defaultPriceCoordinate,
@@ -166,6 +108,14 @@ const markStyles = {
 			...InteractiveYCoordinate.defaultProps.defaultPriceCoordinate.edge,
 			stroke: 'blue',
 		},
+		textBox: {
+			...InteractiveYCoordinate.defaultProps.defaultPriceCoordinate.textBox,
+			closeIcon: {
+				...InteractiveYCoordinate.defaultProps.defaultPriceCoordinate.textBox.closeIcon,
+				width: 0,
+				padding: { left: 0, right: 5 },
+			}
+		}
 	},
 	red: {
 		...InteractiveYCoordinate.defaultProps.defaultPriceCoordinate,
@@ -176,40 +126,41 @@ const markStyles = {
 		edge: {
 			...InteractiveYCoordinate.defaultProps.defaultPriceCoordinate.edge,
 			stroke: 'red',
+		},
+		textBox: {
+			...InteractiveYCoordinate.defaultProps.defaultPriceCoordinate.textBox,
+			closeIcon: {
+				...InteractiveYCoordinate.defaultProps.defaultPriceCoordinate.textBox.closeIcon,
+				width: 0,
+				padding: { left: 0, right: 5 },
+			}
 		}
 	}
 }
+
+const annotationProps = {
+	fontFamily: "Glyphicons Halflings",
+	fontSize: 20,
+	fill: "#060F8F",
+	opacity: 0.8,
+	text: "*",
+	//y: ({ yScale }) => yScale.range()[0],
+	tooltip: d => timeFormat("%B")(d.date),
+	// onMouseOver: console.log.bind(console),
+};
+
 class CandleStickChartWithMA extends React.Component {
 	constructor(props) {
 		super(props);
-		this.onKeyPress = this.onKeyPress.bind(this);
 		this.onDrawComplete = this.onDrawComplete.bind(this);
-		this.handleChoosePosition = this.handleChoosePosition.bind(this);
 
 		this.saveInteractiveNodes = saveInteractiveNodes.bind(this);
-		this.getInteractiveNodes = getInteractiveNodes.bind(this);
-
-		this.handleSelection = this.handleSelection.bind(this);
 
 		this.saveCanvasNode = this.saveCanvasNode.bind(this);
-
-		this.handleDialogClose = this.handleDialogClose.bind(this);
-		this.handleTextChange = this.handleTextChange.bind(this);
-
-		this.onDragComplete = this.onDragComplete.bind(this);
-		this.onDelete = this.onDelete.bind(this);
-		this.handleChangeAlert = this.handleChangeAlert.bind(this);
-		this.handleDeleteAlert = this.handleDeleteAlert.bind(this);
-		this.handleDoubleClickAlert = this.handleDoubleClickAlert.bind(this);
-		this.handleAlertChoosePosition = this.handleChoosePosition.bind(this);
-		this.handleAlertSelection = this.handleSelection.bind(this);
 
 		this.state = {
 			enableInteractiveObject: false,
 			textList_1: [],
-			textList_3: [],
-			showTextModal: false,
-			showYModal: false,
 			yCoordinateList_1: [
 				{
 					...markStyles.blue,
@@ -232,209 +183,10 @@ class CandleStickChartWithMA extends React.Component {
 					text: 'S2',
 				},
 			],
-			yCoordinateList_3: [],
-			alertToEdit: {}
 		};
 	}
 	saveCanvasNode(node) {
 		this.canvasNode = node;
-	}
-	handleSelection(interactives, moreProps, e) {
-		if (this.state.enableInteractiveObject) {
-			const independentCharts = moreProps.currentCharts.filter(d => d !== 2)
-			if (independentCharts.length > 0) {
-				const first = head(independentCharts);
-
-				const morePropsForChart = getMorePropsForChart(moreProps, first)
-				const {
-					mouseXY: [, mouseY],
-					chartConfig: { yScale },
-					xAccessor,
-					currentItem,
-				} = morePropsForChart;
-
-				const position = [xAccessor(currentItem), yScale.invert(mouseY)];
-				const newText = {
-					...defaultTextStyles,
-					position,
-				};
-				this.handleChoosePosition(newText, morePropsForChart, e);
-			}
-		} else {
-			const state = toObject(interactives, each => {
-				return [
-					`textList_${each.chartId}`,
-					each.objects,
-				];
-			});
-			this.setState(state);
-		}
-	}
-	handleChoosePosition(text, moreProps) {
-		this.componentWillUnmount();
-		const { id: chartId } = moreProps.chartConfig;
-
-		this.setState({
-			[`textList_${chartId}`]: [
-				...this.state[`textList_${chartId}`],
-				text
-			],
-			showTextModal: true,
-			text: text.text,
-			chartId
-		});
-	}
-	handleTextChange(text, chartId) {
-		const textList = this.state[`textList_${chartId}`];
-		const allButLast = textList
-			.slice(0, textList.length - 1);
-
-		const lastText = {
-			...last(textList),
-			text,
-		};
-
-		this.setState({
-			[`textList_${chartId}`]: [
-				...allButLast,
-				lastText
-			],
-			showTextModal: false,
-			enableInteractiveObject: false,
-		});
-		this.componentDidMount();
-	}
-
-	handleAlertSelection(interactives, moreProps, e) {
-		if (this.state.enableInteractiveObject) {
-			const independentCharts = moreProps.currentCharts.filter(d => d !== 2);
-			if (independentCharts.length > 0) {
-				const first = head(independentCharts);
-
-				const morePropsForChart = getMorePropsForChart(moreProps, first);
-				const {
-					mouseXY: [, mouseY],
-					chartConfig: { yScale },
-				} = morePropsForChart;
-
-				const yValue = round(yScale.invert(mouseY), 2);
-				const newAlert = {
-					...InteractiveYCoordinate.defaultProps.defaultPriceCoordinate,
-					yValue,
-					id: shortid.generate()
-				};
-				this.handleChoosePosition(newAlert, morePropsForChart, e);
-			}
-		} else {
-			const state = toObject(interactives, each => {
-				return [
-					`yCoordinateList_${each.chartId}`,
-					each.objects,
-				];
-			});
-			this.setState(state);
-		}
-	}
-	handleAlertChoosePosition(alert, moreProps) {
-		const { id: chartId } = moreProps.chartConfig;
-		this.setState({
-			[`yCoordinateList_${chartId}`]: [
-				...this.state[`yCoordinateList_${chartId}`],
-				alert
-			],
-			enableInteractiveObject: false,
-		});
-	}
-	handleDoubleClickAlert(item) {
-		this.setState({
-			showYModal: true,
-			alertToEdit: {
-				alert: item.object,
-				chartId: item.chartId,
-			},
-		});
-	}
-	handleChangeAlert(alert, chartId) {
-		const yCoordinateList = this.state[`yCoordinateList_${chartId}`];
-		const newAlertList = yCoordinateList.map(d => {
-			return d.id === alert.id ? alert : d;
-		});
-
-		this.setState({
-			[`yCoordinateList_${chartId}`]: newAlertList,
-			showYModal: false,
-			enableInteractiveObject: false,
-		});
-	}
-	handleDeleteAlert() {
-		const { alertToEdit } = this.state;
-		const key = `yCoordinateList_${alertToEdit.chartId}`;
-		const yCoordinateList = this.state[key].filter(d => {
-			return d.id !== alertToEdit.alert.id;
-		});
-		this.setState({
-			showYModal: false,
-			alertToEdit: {},
-			[key]: yCoordinateList
-		});
-	}
-
-	onDelete(yCoordinate, moreProps) {
-		this.setState(state => {
-			const chartId = moreProps.chartConfig.id;
-			const key = `yCoordinateList_${chartId}`;
-
-			const list = state[key];
-			return {
-				[key]: list.filter(d => d.id !== yCoordinate.id)
-			};
-		});
-	}
-
-	onDragComplete(yCoordinateList, moreProps, draggedAlert) {
-		// this gets called on drag complete of drawing object
-		const { id: chartId } = moreProps.chartConfig;
-
-		const key = `yCoordinateList_${chartId}`;
-		const alertDragged = draggedAlert != null;
-
-		this.setState({
-			enableInteractiveObject: false,
-			[key]: yCoordinateList,
-			showModal: alertDragged,
-			alertToEdit: {
-				alert: draggedAlert,
-				chartId,
-			},
-			originalAlertList: this.state[key],
-		});
-	}
-
-	handleDialogClose() {
-		this.setState({
-			showTextModal: false,
-			showYModal: false,
-		});
-
-				// cancel alert edit
-		this.setState(state => {
-			const { originalAlertList, alertToEdit } = state;
-			const key = `yCoordinateList_${alertToEdit.chartId}`;
-			const list = originalAlertList || state[key];
-
-			return {
-				showModal: false,
-				[key]: list,
-			};
-		});
-		this.componentDidMount();
-	}
-
-	componentDidMount() {
-		document.addEventListener("keyup", this.onKeyPress);
-	}
-	componentWillUnmount() {
-		document.removeEventListener("keyup", this.onKeyPress);
 	}
 	onDrawComplete(textList, moreProps) {
 		// this gets called on
@@ -448,36 +200,36 @@ class CandleStickChartWithMA extends React.Component {
 		});
 	}
 
-	onKeyPress(e) {
-		const keyCode = e.which;
-		switch (keyCode) {
-		case 46: {
-			// DEL
-			this.setState({
-				textList_1: this.state.textList_1.filter(d => !d.selected),
-				textList_3: this.state.textList_3.filter(d => !d.selected),
-				yCoordinateList_1: this.state.yCoordinateList_1.filter(d => !d.selected),
-				yCoordinateList_3: this.state.yCoordinateList_3.filter(d => !d.selected)
-			});
-			break;
+	getAnnotation(mark) {
+		const date = parseDate(mark.date);
+		const data = this.props.data.filter(d => d.date.getTime() === date.getTime());
+		var yPos = null;
+		var style = null;
+
+		if (data === []) return;
+
+		const maxVal = Math.max(data[0].open, data[0].close, data[0].low, data[0].high);
+		const minVal = Math.min(data[0].open, data[0].close, data[0].low, data[0].high);
+
+		if (mark.direction === 'over') {
+			yPos = maxVal;
+			style = {
+				fill: mark.color,
+				y: ({ yScale }) => yScale(yPos) + (yScale.range()[1] - yScale.range()[0]) * 0.1,
+			};
 		}
-		case 27: {
-			// ESC
-			//this.node.terminate();
-			//this.canvasNode.cancelDrag();
-			this.setState({
-				enableInteractiveObject: false
-			});
-			break;
+		else if (mark.direction === 'under') {
+			yPos = minVal;
+			style = {
+				fill: mark.color,
+				y: ({ yScale }) => yScale(yPos) - (yScale.range()[1] - yScale.range()[0]) * 0.1,
+			};
 		}
-		case 68: // D - Draw drawing object
-		case 69: { // E - Enable drawing object
-			this.setState({
-				enableInteractiveObject: true
-			});
-			break;
-		}
-		}
+
+		return 	(<Annotate with={LabelAnnotation}
+			when={d => d.date.getTime() === date.getTime() /* some condition */}
+			usingProps={{...annotationProps, ...style}}
+		/>);
 	}
 
 	render() {
@@ -520,7 +272,7 @@ class CandleStickChartWithMA extends React.Component {
 		const end = xAccessor(data[Math.max(0, data.length - 150)]);
 		const xExtents = [start, end];
 
-		const { showTextModal, showYModal, text, alertToEdit } = this.state;
+		const { text } = this.state;
 
 		return (
 			<div>
@@ -538,7 +290,7 @@ class CandleStickChartWithMA extends React.Component {
 				>
 					<Chart id={1}
 						yExtents={[d => [d.high, d.low], ema50.accessor(), ema200.accessor()]}
-						padding={{ top: 10, bottom: 100 }}
+						padding={{ top: 50, bottom: 100 }}
 					>
 						<XAxis axisAt="bottom" orient="bottom"/>
 						<YAxis axisAt="right" orient="right" ticks={5} />
@@ -564,13 +316,17 @@ class CandleStickChartWithMA extends React.Component {
 								textList={this.state.textList_1}
 								hoverText={hoverTextStyles}
 						/>
+						
 						<InteractiveYCoordinate
 							ref={this.saveInteractiveNodes("InteractiveYCoordinate", 1)}
 							enabled={this.state.enableInteractiveObject}
-							onDragComplete={this.onDragComplete}
-							onDelete={this.onDelete}
 							yCoordinateList={this.state.yCoordinateList_1}
 						/>
+
+						{marks.marks.map((mark, index) =>(
+							this.getAnnotation(mark)
+						))}
+
 
 						<MovingAverageTooltip
 							onClick={e => console.log(e)}
@@ -633,22 +389,7 @@ class CandleStickChartWithMA extends React.Component {
 						<CurrentCoordinate yAccessor={d => d.volume} fill={Colors.red} />
 					</Chart>
 					<CrossHairCursor />
-					<DrawingObjectSelector
-						enabled
-						getInteractiveNodes={this.getInteractiveNodes}
-						drawingObjectMap={{
-							InteractiveText: "textList",
-						}}
-						onSelect={this.handleSelection}
-					/>
 				</ChartCanvas>
-				<Dialog
-					showModal={showTextModal}
-					text={text}
-					chartId={this.state.chartId}
-					onClose={this.handleDialogClose}
-					onSave={this.handleTextChange}
-				/>
 		</div>
 		);
 	}

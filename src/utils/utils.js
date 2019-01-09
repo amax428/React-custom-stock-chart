@@ -8,9 +8,9 @@ function parseData(parse) {
 	return function(d) {
 		d.date = parse(d.date);
 		d.open = +d.open;
-		d.close = +d.high;
-		d.high = +d.low;
-		d.low = +d.close;
+		d.close = +d.close;
+		d.high = +d.high;
+		d.low = +d.low;
 		d.volume = +d.volume;
 
 		return d;
