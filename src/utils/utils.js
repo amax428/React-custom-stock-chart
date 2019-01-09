@@ -1,15 +1,16 @@
 
 
-import { tsvParse, csvParse } from 'd3-dsv';
+import { tsvParse } from 'd3-dsv';
 import { timeParse } from 'd3-time-format';
+import axios from 'axios';
 
 function parseData(parse) {
 	return function(d) {
 		d.date = parse(d.date);
 		d.open = +d.open;
-		d.high = +d.high;
-		d.low = +d.low;
-		d.close = +d.close;
+		d.close = +d.high;
+		d.high = +d.low;
+		d.low = +d.close;
 		d.volume = +d.volume;
 
 		return d;
@@ -19,9 +20,14 @@ function parseData(parse) {
 const parseDate = timeParse("%Y-%m-%d");
 
 export function getData() {
-	const promiseMSFT = fetch("https://cdn.rawgit.com/rrag/react-stockcharts/master/docs/data/MSFT.tsv")
-	//const promiseMSFT = fetch("https://www.buysellorhold.com/api/history/tsv?symbol=GAB")
+	//const promiseMSFT = fetch("https://cdn.rawgit.com/rrag/react-stockcharts/master/docs/data/MSFT.tsv")
+	const promiseMSFT = fetch("https://www.buysellorhold.com/api/history/tsv?symbol=GAB")
 		.then(response => response.text())
 		.then(data => tsvParse(data, parseData(parseDate)))
 	return promiseMSFT;
+}
+
+export function getMarks() {
+	const markData = axios.get('http://www.buysellorhold.com/api/getmarks.dll?CType=Y&sym=GAB');
+	return markData;
 }

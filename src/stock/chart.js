@@ -4,7 +4,7 @@ import PropTypes from 'prop-types';
 
 import { format } from 'd3-format';
 import { timeFormat } from 'd3-time-format';
-
+import shortid from 'shortid';
 import { ChartCanvas, Chart } from 'react-stockcharts';
 
 import {
@@ -35,14 +35,20 @@ import { discontinuousTimeScaleProvider } from 'react-stockcharts/lib/scale';
 import {
 	OHLCTooltip,
 	MovingAverageTooltip,
+	HoverTooltip,
 } from 'react-stockcharts/lib/tooltip';
 import { ema, sma } from 'react-stockcharts/lib/indicator';
 import { fitWidth } from 'react-stockcharts/lib/helper';
 import { head, last, toObject } from 'react-stockcharts/lib/utils';
-import { InteractiveText, DrawingObjectSelector } from "react-stockcharts/lib/interactive";
+import { InteractiveText, DrawingObjectSelector, InteractiveYCoordinate } from "react-stockcharts/lib/interactive";
 import { getMorePropsForChart } from "react-stockcharts/lib/interactive/utils";
 import { saveInteractiveNodes, getInteractiveNodes } from '../utils/interactiveutils';
 import { Colors } from '../styles/variables';
+
+function round(number, precision = 0) {
+	const d = Math.pow(10, precision);
+	return Math.round(number * d) / d;
+}
 
 var defaultTextStyles = {
 	...InteractiveText.defaultProps.defaultText,
@@ -57,6 +63,43 @@ var hoverTextStyles = {
 	...InteractiveText.defaultProps.hoverText,
 	text: 'Click here to move it',
 };
+
+const dateFormat = timeFormat("%Y-%m-%d");
+const numberFormat = format(".2f");
+
+function tooltipContent(ys) {
+	return ({ currentItem, xAccessor }) => {
+		return {
+			x: dateFormat(xAccessor(currentItem)),
+			y: [
+				{
+					label: "open",
+					value: currentItem.open && numberFormat(currentItem.open)
+				},
+				{
+					label: "high",
+					value: currentItem.high && numberFormat(currentItem.high)
+				},
+				{
+					label: "low",
+					value: currentItem.low && numberFormat(currentItem.low)
+				},
+				{
+					label: "close",
+					value: currentItem.close && numberFormat(currentItem.close)
+				}
+			]
+				.concat(
+					ys.map(each => ({
+						label: each.label,
+						value: each.value(currentItem),
+						stroke: each.stroke
+					}))
+				)
+				.filter(line => line.value)
+		};
+	};
+}
 
 class Dialog extends React.Component {
 	constructor(props) {
@@ -110,6 +153,67 @@ class Dialog extends React.Component {
 	}
 }
 
+const alert = InteractiveYCoordinate.defaultProps.defaultPriceCoordinate;
+
+class AlertDialog extends React.Component {
+	constructor(props) {
+		super(props);
+		this.state = {
+			alert: props.alert,
+		};
+		this.handleChange = this.handleChange.bind(this);
+		this.handleSave = this.handleSave.bind(this);
+	}
+	componentWillReceiveProps(nextProps) {
+		this.setState({
+			alert: nextProps.alert,
+		});
+	}
+	handleChange(e) {
+		const { alert } = this.state;
+		this.setState({
+			alert: {
+				...alert,
+				yValue: Number(e.target.value),
+			}
+		});
+	}
+	handleSave() {
+		this.props.onSave(this.state.alert, this.props.chartId);
+	}
+	render() {
+		const {
+			showModal,
+			onClose,
+			onDeleteAlert,
+		} = this.props;
+		const { alert } = this.state;
+
+		if (!showModal) return null;
+		return (
+			<Modal show={showModal} onHide={onClose} >
+				<Modal.Header closeButton>
+					<Modal.Title>Edit Alert</Modal.Title>
+				</Modal.Header>
+
+				<Modal.Body>
+					<form>
+						<FormGroup controlId="text">
+							<ControlLabel>Alert when crossing</ControlLabel>
+							<FormControl type="number" value={alert.yValue} onChange={this.handleChange} />
+						</FormGroup>
+					</form>
+				</Modal.Body>
+
+				<Modal.Footer>
+					<Button bsStyle="danger" onClick={onDeleteAlert}>Delete Alert</Button>
+					<Button bsStyle="primary" onClick={this.handleSave}>Save</Button>
+				</Modal.Footer>
+			</Modal>
+		);
+	}
+}
+
 class CandleStickChartWithMA extends React.Component {
 	constructor(props) {
 		super(props);
@@ -127,11 +231,48 @@ class CandleStickChartWithMA extends React.Component {
 		this.handleDialogClose = this.handleDialogClose.bind(this);
 		this.handleTextChange = this.handleTextChange.bind(this);
 
+		this.onDragComplete = this.onDragComplete.bind(this);
+		this.onDelete = this.onDelete.bind(this);
+		this.handleChangeAlert = this.handleChangeAlert.bind(this);
+		this.handleDeleteAlert = this.handleDeleteAlert.bind(this);
+		this.handleDoubleClickAlert = this.handleDoubleClickAlert.bind(this);
+		this.handleAlertChoosePosition = this.handleChoosePosition.bind(this);
+		this.handleAlertSelection = this.handleSelection.bind(this);
+
 		this.state = {
-			enableInteractiveObject: true,
+			enableInteractiveObject: false,
 			textList_1: [],
 			textList_3: [],
-			showModal: false,
+			showTextModal: false,
+			showYModal: false,
+			yCoordinateList_1: [
+				{
+					...InteractiveYCoordinate.defaultProps.defaultPriceCoordinate,
+					yValue: this.props.marks.R1,
+					id: shortid.generate(),
+					draggable: true,
+				},
+				{
+					...InteractiveYCoordinate.defaultProps.defaultPriceCoordinate,
+					yValue: this.props.marks.R2,
+					id: shortid.generate(),
+					draggable: true,
+				},
+				{
+					...InteractiveYCoordinate.defaultProps.defaultPriceCoordinate,
+					yValue: this.props.marks.S1,
+					id: shortid.generate(),
+					draggable: true,
+				},
+				{
+					...InteractiveYCoordinate.defaultProps.defaultPriceCoordinate,
+					yValue: this.props.marks.S2,
+					id: shortid.generate(),
+					draggable: true,
+				},
+			],
+			yCoordinateList_3: [],
+			alertToEdit: {}
 		};
 	}
 	saveCanvasNode(node) {
@@ -177,7 +318,7 @@ class CandleStickChartWithMA extends React.Component {
 				...this.state[`textList_${chartId}`],
 				text
 			],
-			showModal: true,
+			showTextModal: true,
 			text: text.text,
 			chartId
 		});
@@ -197,14 +338,133 @@ class CandleStickChartWithMA extends React.Component {
 				...allButLast,
 				lastText
 			],
-			showModal: false,
+			showTextModal: false,
 			enableInteractiveObject: false,
 		});
 		this.componentDidMount();
 	}
+
+	handleAlertSelection(interactives, moreProps, e) {
+		if (this.state.enableInteractiveObject) {
+			const independentCharts = moreProps.currentCharts.filter(d => d !== 2);
+			if (independentCharts.length > 0) {
+				const first = head(independentCharts);
+
+				const morePropsForChart = getMorePropsForChart(moreProps, first);
+				const {
+					mouseXY: [, mouseY],
+					chartConfig: { yScale },
+				} = morePropsForChart;
+
+				const yValue = round(yScale.invert(mouseY), 2);
+				const newAlert = {
+					...InteractiveYCoordinate.defaultProps.defaultPriceCoordinate,
+					yValue,
+					id: shortid.generate()
+				};
+				this.handleChoosePosition(newAlert, morePropsForChart, e);
+			}
+		} else {
+			const state = toObject(interactives, each => {
+				return [
+					`yCoordinateList_${each.chartId}`,
+					each.objects,
+				];
+			});
+			this.setState(state);
+		}
+	}
+	handleAlertChoosePosition(alert, moreProps) {
+		const { id: chartId } = moreProps.chartConfig;
+		this.setState({
+			[`yCoordinateList_${chartId}`]: [
+				...this.state[`yCoordinateList_${chartId}`],
+				alert
+			],
+			enableInteractiveObject: false,
+		});
+	}
+	handleDoubleClickAlert(item) {
+		this.setState({
+			showYModal: true,
+			alertToEdit: {
+				alert: item.object,
+				chartId: item.chartId,
+			},
+		});
+	}
+	handleChangeAlert(alert, chartId) {
+		const yCoordinateList = this.state[`yCoordinateList_${chartId}`];
+		const newAlertList = yCoordinateList.map(d => {
+			return d.id === alert.id ? alert : d;
+		});
+
+		this.setState({
+			[`yCoordinateList_${chartId}`]: newAlertList,
+			showYModal: false,
+			enableInteractiveObject: false,
+		});
+	}
+	handleDeleteAlert() {
+		const { alertToEdit } = this.state;
+		const key = `yCoordinateList_${alertToEdit.chartId}`;
+		const yCoordinateList = this.state[key].filter(d => {
+			return d.id !== alertToEdit.alert.id;
+		});
+		this.setState({
+			showYModal: false,
+			alertToEdit: {},
+			[key]: yCoordinateList
+		});
+	}
+
+	onDelete(yCoordinate, moreProps) {
+		this.setState(state => {
+			const chartId = moreProps.chartConfig.id;
+			const key = `yCoordinateList_${chartId}`;
+
+			const list = state[key];
+			return {
+				[key]: list.filter(d => d.id !== yCoordinate.id)
+			};
+		});
+	}
+
+	onDragComplete(yCoordinateList, moreProps, draggedAlert) {
+		// this gets called on drag complete of drawing object
+		const { id: chartId } = moreProps.chartConfig;
+
+		const key = `yCoordinateList_${chartId}`;
+		const alertDragged = draggedAlert != null;
+
+		this.setState({
+			enableInteractiveObject: false,
+			[key]: yCoordinateList,
+			showModal: alertDragged,
+			alertToEdit: {
+				alert: draggedAlert,
+				chartId,
+			},
+			originalAlertList: this.state[key],
+		});
+	}
+
 	handleDialogClose() {
 		this.setState({
-			showModal: false,
+			showTextModal: false,
+			showYModal: false,
+		});
+
+				// cancel alert edit
+		this.setState(state => {
+			const { originalAlertList, alertToEdit } = state;
+			const key = `yCoordinateList_${alertToEdit.chartId}`;
+			const list = originalAlertList || state[key];
+
+			return {
+				showModal: false,
+				[key]: list,
+			};
 		});
 		this.componentDidMount();
 	}
@@ -226,6 +486,7 @@ class CandleStickChartWithMA extends React.Component {
 			[`textList_${chartId}`]: textList,
 		});
 	}
+
 	onKeyPress(e) {
 		const keyCode = e.which;
 		switch (keyCode) {
@@ -233,7 +494,9 @@ class CandleStickChartWithMA extends React.Component {
 			// DEL
 			this.setState({
 				textList_1: this.state.textList_1.filter(d => !d.selected),
-				textList_3: this.state.textList_3.filter(d => !d.selected)
+				textList_3: this.state.textList_3.filter(d => !d.selected),
+				yCoordinateList_1: this.state.yCoordinateList_1.filter(d => !d.selected),
+				yCoordinateList_3: this.state.yCoordinateList_3.filter(d => !d.selected)
 			});
 			break;
 		}
@@ -280,7 +543,7 @@ class CandleStickChartWithMA extends React.Component {
 			.fill('rgba(0,0,0,0)')
 			.stroke(Colors.green);
 
-		const { type, data: initialData, width, ratio } = this.props;
+		const { type, data: initialData, width, ratio, marks } = this.props;
 
 		const calculatedData = ema50(ema200(smaVolume50(initialData)));
 		const xScaleProvider = discontinuousTimeScaleProvider
@@ -296,7 +559,7 @@ class CandleStickChartWithMA extends React.Component {
 		const end = xAccessor(data[Math.max(0, data.length - 150)]);
 		const xExtents = [start, end];
 
-		const { showModal, text } = this.state;
+		const { showTextModal, showYModal, text, alertToEdit } = this.state;
 
 		return (
 			<div>
@@ -340,6 +603,13 @@ class CandleStickChartWithMA extends React.Component {
 								textList={this.state.textList_1}
 								hoverText={hoverTextStyles}
 						/>
+						<InteractiveYCoordinate
+							ref={this.saveInteractiveNodes("InteractiveYCoordinate", 1)}
+							enabled={this.state.enableInteractiveObject}
+							onDragComplete={this.onDragComplete}
+							onDelete={this.onDelete}
+							yCoordinateList={this.state.yCoordinateList_1}
+						/>
 
 						<MovingAverageTooltip
 							onClick={e => console.log(e)}
@@ -360,6 +630,25 @@ class CandleStickChartWithMA extends React.Component {
 									echo: "some echo here",
 								},
 							]}
+						/>
+
+						<HoverTooltip
+							yAccessor={ema50.accessor()}
+							tooltipContent={tooltipContent([
+								{
+									label: `${ema50.type()}(${ema50.options()
+										.windowSize})`,
+									value: d => numberFormat(ema50.accessor()(d)),
+									stroke: ema50.stroke()
+								},
+								{
+									label: `${ema200.type()}(${ema200.options()
+										.windowSize})`,
+									value: d => numberFormat(ema200.accessor()(d)),
+									stroke: ema200.stroke()
+								}
+							])}
+							fontSize={15}
 						/>
 					</Chart>
 					<Chart id={2}
@@ -387,18 +676,26 @@ class CandleStickChartWithMA extends React.Component {
 						enabled
 						getInteractiveNodes={this.getInteractiveNodes}
 						drawingObjectMap={{
-							InteractiveText: "textList"
+							InteractiveText: "textList",
 						}}
 						onSelect={this.handleSelection}
 					/>
 				</ChartCanvas>
 				<Dialog
-				showModal={showModal}
-				text={text}
-				chartId={this.state.chartId}
-				onClose={this.handleDialogClose}
-				onSave={this.handleTextChange}
-			/>
+					showModal={showTextModal}
+					text={text}
+					chartId={this.state.chartId}
+					onClose={this.handleDialogClose}
+					onSave={this.handleTextChange}
+				/>
+				<AlertDialog
+					showModal={showYModal}
+					alert={alertToEdit.alert}
+					chartId={alertToEdit.chartId}
+					onClose={this.handleDialogClose}
+					onSave={this.handleChangeAlert}
+					onDeleteAlert={this.handleDeleteAlert}
+				/>
 		</div>
 		);
 	}
